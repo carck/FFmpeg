@@ -32,6 +32,34 @@
 #include "libavutil/frame.h"
 #include "packet.h"
 
+#define ION_HEAP(bit) (1 << (bit))
+#define ION_SYSTEM_HEAP_ID 25
+
+typedef int ion_user_handle_t;
+
+struct ion_allocation_data {
+	size_t len;
+	size_t align;
+	unsigned int heap_id_mask;
+	unsigned int flags;
+	ion_user_handle_t handle;
+};
+
+struct ion_fd_data {
+	ion_user_handle_t handle;
+	int fd;
+};
+
+struct ion_handle_data {
+	ion_user_handle_t handle;
+};
+
+#define ION_IOC_MAGIC		'I'
+#define ION_IOC_ALLOC		_IOWR(ION_IOC_MAGIC, 0, struct ion_allocation_data)
+#define ION_IOC_FREE		_IOWR(ION_IOC_MAGIC, 1, struct ion_handle_data)
+#define ION_IOC_MAP		    _IOWR(ION_IOC_MAGIC, 2, struct ion_fd_data)
+
+
 enum V4L2Buffer_status {
     V4L2BUF_AVAILABLE,
     V4L2BUF_IN_DRIVER,
@@ -55,6 +83,7 @@ typedef struct V4L2Buffer {
         int bytesperline;
         void * mm_addr;
         size_t length;
+        int ion_fd;
     } plane_info[VIDEO_MAX_PLANES];
 
     int num_planes;

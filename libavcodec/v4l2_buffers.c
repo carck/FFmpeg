@@ -34,6 +34,7 @@
 #include "v4l2_m2m.h"
 
 #define USEC_PER_SEC 1000000
+static int alloc_ion_buffer(V4L2Context *ctx, size_t size, uint32_t flags);
 static AVRational v4l2_timebase = { 1, USEC_PER_SEC };
 
 static inline V4L2m2mContext *buf_to_m2mctx(V4L2Buffer *buf)
@@ -491,33 +492,56 @@ int ff_v4l2_buffer_avpkt_to_buf(const AVPacket *pkt, V4L2Buffer *out)
     return 0;
 }
 
+
+int alloc_ion_buffer(V4L2Context *ctx, size_t size, uint32_t flags)
+{
+	struct ion_allocation_data ion_alloc = { 0 };
+	struct ion_fd_data ion_fd_data = { 0 };
+	struct ion_handle_data ion_handle_data = { 0 };
+	int ret;
+
+	ion_alloc.handle = -1;
+	ion_alloc.len = size;
+	ion_alloc.align = 4096;
+	ion_alloc.flags = flags;
+	ion_alloc.heap_id_mask = ION_HEAP(ION_SYSTEM_HEAP_ID);
+
+	if (ioctl(ctx->ion_fd, ION_IOC_ALLOC, &ion_alloc) < 0) {
+		av_log(logger(ctx), AV_LOG_ERROR, "Failed to allocate ion buffer: %m");
+		return -1;
+	}
+
+	av_log(logger(ctx), AV_LOG_ERROR, "Allocated %zd bytes ION buffer %d",
+	    ion_alloc.len, ion_alloc.handle);
+
+	ion_fd_data.handle = ion_alloc.handle;
+	ion_fd_data.fd = -1;
+
+	if (ioctl(ctx->ion_fd, ION_IOC_MAP, &ion_fd_data) < 0) {
+		av_log(logger(ctx), AV_LOG_ERROR, "Failed to map ion buffer: %m");
+		ret = -1;
+	} else {
+		ret = ion_fd_data.fd;
+	}
+
+	ion_handle_data.handle = ion_alloc.handle;
+	if (ioctl(ctx->ion_fd, ION_IOC_FREE, &ion_handle_data) < 0)
+		av_log(logger(ctx), AV_LOG_ERROR, "Failed to free ion buffer: %m");
+
+	return ret;
+}
+
 int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
 {
     V4L2Context *ctx = avbuf->context;
     int ret, i;
 
-    avbuf->buf.memory = V4L2_MEMORY_MMAP;
+    avbuf->buf.memory = V4L2_MEMORY_USERPTR;
     avbuf->buf.type = ctx->type;
     avbuf->buf.index = index;
-
-    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
-        avbuf->buf.length = VIDEO_MAX_PLANES;
-        avbuf->buf.m.planes = avbuf->planes;
-    }
-
-    ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_QUERYBUF, &avbuf->buf);
-    if (ret < 0)
-        return AVERROR(errno);
-
-    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
-        avbuf->num_planes = 0;
-        /* in MP, the V4L2 API states that buf.length means num_planes */
-        for (i = 0; i < avbuf->buf.length; i++) {
-            if (avbuf->buf.m.planes[i].length)
-                avbuf->num_planes++;
-        }
-    } else
-        avbuf->num_planes = 1;
+    avbuf->buf.m.planes = avbuf->planes;
+    avbuf->num_planes = ctx->format.fmt.pix_mp.num_planes;
+    avbuf->buf.length = avbuf->num_planes;
 
     for (i = 0; i < avbuf->num_planes; i++) {
 
@@ -525,20 +549,28 @@ int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
             ctx->format.fmt.pix_mp.plane_fmt[i].bytesperline :
             ctx->format.fmt.pix.bytesperline;
 
-        if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
-            avbuf->plane_info[i].length = avbuf->buf.m.planes[i].length;
-            avbuf->plane_info[i].mm_addr = mmap(NULL, avbuf->buf.m.planes[i].length,
-                                           PROT_READ | PROT_WRITE, MAP_SHARED,
-                                           buf_to_m2mctx(avbuf)->fd, avbuf->buf.m.planes[i].m.mem_offset);
-        } else {
-            avbuf->plane_info[i].length = avbuf->buf.length;
-            avbuf->plane_info[i].mm_addr = mmap(NULL, avbuf->buf.length,
-                                          PROT_READ | PROT_WRITE, MAP_SHARED,
-                                          buf_to_m2mctx(avbuf)->fd, avbuf->buf.m.offset);
+        avbuf->plane_info[i].length = ctx->format.fmt.pix_mp.plane_fmt[i].sizeimage;
+        avbuf->plane_info[i].ion_fd = alloc_ion_buffer(ctx, 
+                ctx->format.fmt.pix_mp.plane_fmt[i].sizeimage, 0);
+        if (avbuf->plane_info[i].ion_fd < 0){
+            av_log(logger(ctx), AV_LOG_ERROR, "failed to alloc");
+            return AVERROR(ENOMEM);
         }
 
-        if (avbuf->plane_info[i].mm_addr == MAP_FAILED)
+        avbuf->plane_info[i].mm_addr = mmap(NULL, ctx->format.fmt.pix_mp.plane_fmt[0].sizeimage, 
+                PROT_READ | PROT_WRITE, MAP_SHARED, avbuf->plane_info[i].ion_fd, 0);
+        if (avbuf->plane_info[i].mm_addr == MAP_FAILED) {
+            av_log(logger(ctx), AV_LOG_ERROR, "failed to map");
+            close(avbuf->plane_info[i].ion_fd);
             return AVERROR(ENOMEM);
+        }
+
+        avbuf->buf.m.planes[i].m.userptr = avbuf->plane_info[i].mm_addr;
+        avbuf->buf.m.planes[i].reserved[0] = avbuf->plane_info[i].ion_fd;
+        avbuf->buf.m.planes[i].reserved[1] = 0;
+        avbuf->buf.m.planes[i].length = avbuf->plane_info[i].length;
+        avbuf->buf.m.planes[i].bytesused = avbuf->plane_info[i].length;
+        avbuf->buf.m.planes[i].data_offset = 0;
     }
 
     avbuf->status = V4L2BUF_AVAILABLE;

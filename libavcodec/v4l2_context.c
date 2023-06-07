@@ -439,7 +439,7 @@ static V4L2Buffer* v4l2_getfree_v4l2buf(V4L2Context *ctx)
 static int v4l2_release_buffers(V4L2Context* ctx)
 {
     struct v4l2_requestbuffers req = {
-        .memory = V4L2_MEMORY_MMAP,
+        .memory = V4L2_MEMORY_USERPTR,
         .type = ctx->type,
         .count = 0, /* 0 -> unmaps buffers from the driver */
     };
@@ -453,6 +453,9 @@ static int v4l2_release_buffers(V4L2Context* ctx)
             if (p->mm_addr && p->length)
                 if (munmap(p->mm_addr, p->length) < 0)
                     av_log(logger(ctx), AV_LOG_ERROR, "%s unmap plane (%s))\n", ctx->name, av_err2str(AVERROR(errno)));
+
+            if (close(p->ion_fd) < 0)
+			    av_log(logger(ctx), AV_LOG_ERROR, "failed to close ion buffer");
         }
     }
 
@@ -697,6 +700,10 @@ void ff_v4l2_context_release(V4L2Context* ctx)
 
     if (!ctx->buffers)
         return;
+    
+    if (close(ctx->ion_fd)) {
+		av_log(logger(ctx), AV_LOG_WARNING, "V4L2 failed to close ion handle the %s buffers\n", ctx->name);
+	}
 
     ret = v4l2_release_buffers(ctx);
     if (ret)
@@ -716,13 +723,19 @@ int ff_v4l2_context_init(V4L2Context* ctx)
         return AVERROR_PATCHWELCOME;
     }
 
+    ctx->ion_fd = open("/dev/ion", O_RDONLY);
+    if (ctx->ion_fd < 0) {
+        av_log(logger(ctx), AV_LOG_ERROR, "%s open ion handle failed\n", ctx->name);
+        return -1;
+    }
+	
     ret = ioctl(s->fd, VIDIOC_G_FMT, &ctx->format);
     if (ret)
         av_log(logger(ctx), AV_LOG_ERROR, "%s VIDIOC_G_FMT failed\n", ctx->name);
 
     memset(&req, 0, sizeof(req));
     req.count = ctx->num_buffers;
-    req.memory = V4L2_MEMORY_MMAP;
+    req.memory = V4L2_MEMORY_USERPTR;
     req.type = ctx->type;
     ret = ioctl(s->fd, VIDIOC_REQBUFS, &req);
     if (ret < 0) {

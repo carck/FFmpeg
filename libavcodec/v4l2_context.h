@@ -93,6 +93,8 @@ typedef struct V4L2Context {
      */
     int done;
 
+    int ion_fd;
+
 } V4L2Context;
 
 /**
