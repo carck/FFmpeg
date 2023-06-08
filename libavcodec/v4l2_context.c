@@ -372,7 +372,7 @@ start:
 
 dequeue:
         memset(&buf, 0, sizeof(buf));
-        buf.memory = V4L2_MEMORY_MMAP;
+        buf.memory = V4L2_MEMORY_USERPTR;
         buf.type = ctx->type;
         if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
             memset(planes, 0, sizeof(planes));
