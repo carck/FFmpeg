@@ -597,6 +597,10 @@ int ff_v4l2_buffer_enqueue(V4L2Buffer* avbuf)
 
     avbuf->buf.flags = avbuf->flags;
 
+    ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_PREPARE_BUF, &avbuf->buf);
+    if (ret < 0)
+	return AVERROR(errno);
+
     ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_QBUF, &avbuf->buf);
     if (ret < 0)
         return AVERROR(errno);

@@ -454,8 +454,8 @@ static int v4l2_release_buffers(V4L2Context* ctx)
                 if (munmap(p->mm_addr, p->length) < 0)
                     av_log(logger(ctx), AV_LOG_ERROR, "%s unmap plane (%s))\n", ctx->name, av_err2str(AVERROR(errno)));
 
-            if (close(p->ion_fd) < 0)
-			    av_log(logger(ctx), AV_LOG_ERROR, "failed to close ion buffer");
+            if (p->ion_fd && close(p->ion_fd) < 0)
+                av_log(logger(ctx), AV_LOG_ERROR, "failed to close ion buffer");
         }
     }
 
@@ -701,9 +701,9 @@ void ff_v4l2_context_release(V4L2Context* ctx)
     if (!ctx->buffers)
         return;
     
-    if (close(ctx->ion_fd)) {
-		av_log(logger(ctx), AV_LOG_WARNING, "V4L2 failed to close ion handle the %s buffers\n", ctx->name);
-	}
+    if (ctx->ion_fd && close(ctx->ion_fd)) {
+	av_log(logger(ctx), AV_LOG_WARNING, "V4L2 failed to close ion handle the %s buffers\n", ctx->name);
+    }
 
     ret = v4l2_release_buffers(ctx);
     if (ret)
