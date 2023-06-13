@@ -34,7 +34,7 @@
 #include "v4l2_m2m.h"
 
 #define USEC_PER_SEC 1000000
-static int alloc_ion_buffer(V4L2Context *ctx, size_t size, uint32_t flags);
+static int alloc_ion_buffer(V4L2Buffer *buf, size_t size, uint32_t flags);
 static AVRational v4l2_timebase = { 1, USEC_PER_SEC };
 
 static inline V4L2m2mContext *buf_to_m2mctx(V4L2Buffer *buf)
@@ -493,8 +493,9 @@ int ff_v4l2_buffer_avpkt_to_buf(const AVPacket *pkt, V4L2Buffer *out)
 }
 
 
-int alloc_ion_buffer(V4L2Context *ctx, size_t size, uint32_t flags)
+int alloc_ion_buffer(V4L2Buffer* avbuf, size_t size, uint32_t flags)
 {
+	V4L2Context *ctx = avbuf->context;
 	struct ion_allocation_data ion_alloc = { 0 };
 	struct ion_fd_data ion_fd_data = { 0 };
 	struct ion_handle_data ion_handle_data = { 0 };
@@ -507,18 +508,18 @@ int alloc_ion_buffer(V4L2Context *ctx, size_t size, uint32_t flags)
 	ion_alloc.heap_id_mask = ION_HEAP(ION_SYSTEM_HEAP_ID);
 
 	if (ioctl(ctx->ion_fd, ION_IOC_ALLOC, &ion_alloc) < 0) {
-		av_log(logger(ctx), AV_LOG_ERROR, "Failed to allocate ion buffer: %m");
+		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to allocate ion buffer: %m");
 		return -1;
 	}
 
-	av_log(logger(ctx), AV_LOG_ERROR, "Allocated %zd bytes ION buffer %d",
+	av_log(logger(avbuf), AV_LOG_ERROR, "Allocated %zd bytes ION buffer %d",
 	    ion_alloc.len, ion_alloc.handle);
 
 	ion_fd_data.handle = ion_alloc.handle;
 	ion_fd_data.fd = -1;
 
 	if (ioctl(ctx->ion_fd, ION_IOC_MAP, &ion_fd_data) < 0) {
-		av_log(logger(ctx), AV_LOG_ERROR, "Failed to map ion buffer: %m");
+		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to map ion buffer: %m");
 		ret = -1;
 	} else {
 		ret = ion_fd_data.fd;
@@ -526,7 +527,7 @@ int alloc_ion_buffer(V4L2Context *ctx, size_t size, uint32_t flags)
 
 	ion_handle_data.handle = ion_alloc.handle;
 	if (ioctl(ctx->ion_fd, ION_IOC_FREE, &ion_handle_data) < 0)
-		av_log(logger(ctx), AV_LOG_ERROR, "Failed to free ion buffer: %m");
+		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to free ion buffer: %m");
 
 	return ret;
 }
@@ -550,17 +551,17 @@ int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
             ctx->format.fmt.pix.bytesperline;
 
         avbuf->plane_info[i].length = ctx->format.fmt.pix_mp.plane_fmt[i].sizeimage;
-        avbuf->plane_info[i].ion_fd = alloc_ion_buffer(ctx, 
+        avbuf->plane_info[i].ion_fd = alloc_ion_buffer(avbuf, 
                 ctx->format.fmt.pix_mp.plane_fmt[i].sizeimage, 0);
         if (avbuf->plane_info[i].ion_fd < 0){
-            av_log(logger(ctx), AV_LOG_ERROR, "failed to alloc");
+            av_log(logger(avbuf), AV_LOG_ERROR, "failed to alloc");
             return AVERROR(ENOMEM);
         }
 
         avbuf->plane_info[i].mm_addr = mmap(NULL, ctx->format.fmt.pix_mp.plane_fmt[0].sizeimage, 
                 PROT_READ | PROT_WRITE, MAP_SHARED, avbuf->plane_info[i].ion_fd, 0);
         if (avbuf->plane_info[i].mm_addr == MAP_FAILED) {
-            av_log(logger(ctx), AV_LOG_ERROR, "failed to map");
+            av_log(logger(avbuf), AV_LOG_ERROR, "failed to map");
             close(avbuf->plane_info[i].ion_fd);
             return AVERROR(ENOMEM);
         }
