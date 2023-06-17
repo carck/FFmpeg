@@ -52,19 +52,13 @@ static inline void v4l2_set_timeperframe(V4L2m2mContext *s, unsigned int num, un
 
 static inline void v4l2_set_ext_ctrl(V4L2m2mContext *s, unsigned int id, signed int value, const char *name, int log_warning)
 {
-    struct v4l2_ext_controls ctrls = { { 0 } };
     struct v4l2_ext_control ctrl = { 0 };
-
-    /* set ctrls */
-    ctrls.ctrl_class = V4L2_CTRL_CLASS_MPEG;
-    ctrls.controls = &ctrl;
-    ctrls.count = 1;
 
     /* set ctrl*/
     ctrl.value = value;
     ctrl.id = id;
 
-    if (ioctl(s->fd, VIDIOC_S_EXT_CTRLS, &ctrls) < 0)
+    if (ioctl(s->fd, VIDIOC_S_CTRL, &ctrl) < 0)
         av_log(s->avctx, log_warning || errno != EINVAL ? AV_LOG_WARNING : AV_LOG_DEBUG,
                "Failed to set %s: %s\n", name, strerror(errno));
     else
@@ -73,19 +67,13 @@ static inline void v4l2_set_ext_ctrl(V4L2m2mContext *s, unsigned int id, signed 
 
 static inline int v4l2_get_ext_ctrl(V4L2m2mContext *s, unsigned int id, signed int *value, const char *name, int log_warning)
 {
-    struct v4l2_ext_controls ctrls = { { 0 } };
     struct v4l2_ext_control ctrl = { 0 };
     int ret;
-
-    /* set ctrls */
-    ctrls.ctrl_class = V4L2_CTRL_CLASS_MPEG;
-    ctrls.controls = &ctrl;
-    ctrls.count = 1;
 
     /* set ctrl*/
     ctrl.id = id ;
 
-    ret = ioctl(s->fd, VIDIOC_G_EXT_CTRLS, &ctrls);
+    ret = ioctl(s->fd, VIDIOC_G_CTRL, &ctrl);
     if (ret < 0) {
         av_log(s->avctx, log_warning || errno != EINVAL ? AV_LOG_WARNING : AV_LOG_DEBUG,
                "Failed to get %s\n", name);

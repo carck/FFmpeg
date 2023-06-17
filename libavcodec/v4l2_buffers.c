@@ -508,18 +508,18 @@ int alloc_ion_buffer(V4L2Buffer* avbuf, size_t size, uint32_t flags)
 	ion_alloc.heap_id_mask = ION_HEAP(ION_SYSTEM_HEAP_ID);
 
 	if (ioctl(ctx->ion_fd, ION_IOC_ALLOC, &ion_alloc) < 0) {
-		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to allocate ion buffer: %m");
+		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to allocate ion buffer: %m\n");
 		return -1;
 	}
 
-	av_log(logger(avbuf), AV_LOG_ERROR, "Allocated %zd bytes ION buffer %d",
+	av_log(logger(avbuf), AV_LOG_ERROR, "Allocated %zd bytes ION buffer %d\n",
 	    ion_alloc.len, ion_alloc.handle);
 
 	ion_fd_data.handle = ion_alloc.handle;
 	ion_fd_data.fd = -1;
 
 	if (ioctl(ctx->ion_fd, ION_IOC_MAP, &ion_fd_data) < 0) {
-		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to map ion buffer: %m");
+		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to map ion buffer: %m\n");
 		ret = -1;
 	} else {
 		ret = ion_fd_data.fd;
@@ -527,7 +527,7 @@ int alloc_ion_buffer(V4L2Buffer* avbuf, size_t size, uint32_t flags)
 
 	ion_handle_data.handle = ion_alloc.handle;
 	if (ioctl(ctx->ion_fd, ION_IOC_FREE, &ion_handle_data) < 0)
-		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to free ion buffer: %m");
+		av_log(logger(avbuf), AV_LOG_ERROR, "Failed to free ion buffer: %m\n");
 
 	return ret;
 }
