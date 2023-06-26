@@ -87,13 +87,9 @@ static enum AVColorPrimaries v4l2_get_color_primaries(V4L2Buffer *buf)
     enum v4l2_ycbcr_encoding ycbcr;
     enum v4l2_colorspace cs;
 
-    cs = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.colorspace :
-        buf->context->format.fmt.pix.colorspace;
+    cs = buf->context->format.fmt.pix_mp.colorspace;
 
-    ycbcr = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.ycbcr_enc:
-        buf->context->format.fmt.pix.ycbcr_enc;
+    ycbcr = buf->context->format.fmt.pix_mp.ycbcr_enc;
 
     switch(ycbcr) {
     case V4L2_YCBCR_ENC_XV709:
@@ -120,9 +116,7 @@ static enum AVColorRange v4l2_get_color_range(V4L2Buffer *buf)
 {
     enum v4l2_quantization qt;
 
-    qt = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.quantization :
-        buf->context->format.fmt.pix.quantization;
+    qt = buf->context->format.fmt.pix_mp.quantization;
 
     switch (qt) {
     case V4L2_QUANTIZATION_LIM_RANGE: return AVCOL_RANGE_MPEG;
@@ -139,13 +133,9 @@ static enum AVColorSpace v4l2_get_color_space(V4L2Buffer *buf)
     enum v4l2_ycbcr_encoding ycbcr;
     enum v4l2_colorspace cs;
 
-    cs = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.colorspace :
-        buf->context->format.fmt.pix.colorspace;
+    cs = buf->context->format.fmt.pix_mp.colorspace;
 
-    ycbcr = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.ycbcr_enc:
-        buf->context->format.fmt.pix.ycbcr_enc;
+    ycbcr =  buf->context->format.fmt.pix_mp.ycbcr_enc;
 
     switch(cs) {
     case V4L2_COLORSPACE_SRGB: return AVCOL_SPC_RGB;
@@ -172,17 +162,11 @@ static enum AVColorTransferCharacteristic v4l2_get_color_trc(V4L2Buffer *buf)
     enum v4l2_xfer_func xfer;
     enum v4l2_colorspace cs;
 
-    cs = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.colorspace :
-        buf->context->format.fmt.pix.colorspace;
+    cs = buf->context->format.fmt.pix_mp.colorspace;
 
-    ycbcr = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.ycbcr_enc:
-        buf->context->format.fmt.pix.ycbcr_enc;
+    ycbcr = buf->context->format.fmt.pix_mp.ycbcr_enc;
 
-    xfer = V4L2_TYPE_IS_MULTIPLANAR(buf->buf.type) ?
-        buf->context->format.fmt.pix_mp.xfer_func:
-        buf->context->format.fmt.pix.xfer_func;
+    xfer = buf->context->format.fmt.pix_mp.xfer_func;
 
     switch (xfer) {
     case V4L2_XFER_FUNC_709: return AVCOL_TRC_BT709;
@@ -286,13 +270,8 @@ static int v4l2_bufref_to_buf(V4L2Buffer *out, int plane, const uint8_t* data, i
 
     memcpy((uint8_t*)out->plane_info[plane].mm_addr+offset, data, FFMIN(size, length-offset));
 
-    if (V4L2_TYPE_IS_MULTIPLANAR(out->buf.type)) {
-        out->planes[plane].bytesused = bytesused;
-        out->planes[plane].length = length;
-    } else {
-        out->buf.bytesused = bytesused;
-        out->buf.length = length;
-    }
+    out->planes[plane].bytesused = bytesused;
+    out->planes[plane].length = length;
 
     return 0;
 }
@@ -342,10 +321,8 @@ static int v4l2_buffer_swframe_to_buf(const AVFrame *frame, V4L2Buffer *out)
 {
     int i, ret;
     struct v4l2_format fmt = out->context->format;
-    int pixel_format = V4L2_TYPE_IS_MULTIPLANAR(fmt.type) ?
-                       fmt.fmt.pix_mp.pixelformat : fmt.fmt.pix.pixelformat;
-    int height       = V4L2_TYPE_IS_MULTIPLANAR(fmt.type) ?
-                       fmt.fmt.pix_mp.height : fmt.fmt.pix.height;
+    int pixel_format = fmt.fmt.pix_mp.pixelformat;
+    int height       = fmt.fmt.pix_mp.height;
     int is_planar_format = 0;
 
     switch (pixel_format) {
@@ -460,7 +437,7 @@ int ff_v4l2_buffer_buf_to_avpkt(AVPacket *pkt, V4L2Buffer *avbuf)
     if (ret)
         return ret;
 
-    pkt->size = V4L2_TYPE_IS_MULTIPLANAR(avbuf->buf.type) ? avbuf->buf.m.planes[0].bytesused : avbuf->buf.bytesused;
+    pkt->size = avbuf->buf.m.planes[0].bytesused;
     pkt->data = pkt->buf->data;
 
     if (avbuf->buf.flags & V4L2_BUF_FLAG_KEYFRAME)
@@ -546,19 +523,16 @@ int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
 
     for (i = 0; i < avbuf->num_planes; i++) {
 
-        avbuf->plane_info[i].bytesperline = V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ?
-            ctx->format.fmt.pix_mp.plane_fmt[i].bytesperline :
-            ctx->format.fmt.pix.bytesperline;
+        avbuf->plane_info[i].bytesperline = ctx->format.fmt.pix_mp.plane_fmt[i].bytesperline;
 
         avbuf->plane_info[i].length = ctx->format.fmt.pix_mp.plane_fmt[i].sizeimage;
-        avbuf->plane_info[i].ion_fd = alloc_ion_buffer(avbuf, 
-                ctx->format.fmt.pix_mp.plane_fmt[i].sizeimage, 0);
+        avbuf->plane_info[i].ion_fd = alloc_ion_buffer(avbuf, avbuf->plane_info[i].length, 0);
         if (avbuf->plane_info[i].ion_fd < 0){
             av_log(logger(avbuf), AV_LOG_ERROR, "failed to alloc");
             return AVERROR(ENOMEM);
         }
 
-        avbuf->plane_info[i].mm_addr = mmap(NULL, ctx->format.fmt.pix_mp.plane_fmt[0].sizeimage, 
+        avbuf->plane_info[i].mm_addr = mmap(NULL, avbuf->plane_info[i].length, 
                 PROT_READ | PROT_WRITE, MAP_SHARED, avbuf->plane_info[i].ion_fd, 0);
         if (avbuf->plane_info[i].mm_addr == MAP_FAILED) {
             av_log(logger(avbuf), AV_LOG_ERROR, "failed to map");
@@ -570,7 +544,7 @@ int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
         avbuf->buf.m.planes[i].reserved[0] = avbuf->plane_info[i].ion_fd;
         avbuf->buf.m.planes[i].reserved[1] = 0;
         avbuf->buf.m.planes[i].length = avbuf->plane_info[i].length;
-        avbuf->buf.m.planes[i].bytesused = avbuf->plane_info[i].length;
+        avbuf->buf.m.planes[i].bytesused = i > 0 ? 0 : avbuf->plane_info[i].length;
         avbuf->buf.m.planes[i].data_offset = 0;
     }
 
@@ -579,14 +553,6 @@ int ff_v4l2_buffer_initialize(V4L2Buffer* avbuf, int index)
     if (V4L2_TYPE_IS_OUTPUT(ctx->type))
         return 0;
 
-    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
-        avbuf->buf.m.planes = avbuf->planes;
-        avbuf->buf.length   = avbuf->num_planes;
-
-    } else {
-        avbuf->buf.bytesused = avbuf->planes[0].bytesused;
-        avbuf->buf.length    = avbuf->planes[0].length;
-    }
 
     return ff_v4l2_buffer_enqueue(avbuf);
 }
@@ -598,14 +564,17 @@ int ff_v4l2_buffer_enqueue(V4L2Buffer* avbuf)
     avbuf->buf.flags = avbuf->flags;
 
     ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_PREPARE_BUF, &avbuf->buf);
-    if (ret < 0)
-	return AVERROR(errno);
+    printf("xxx0 %d\n", ret);
+    //if (ret < 0)
+	//return AVERROR(errno);
 
+    printf("xxx1 %d\n", ret);
     ret = ioctl(buf_to_m2mctx(avbuf)->fd, VIDIOC_QBUF, &avbuf->buf);
     if (ret < 0)
         return AVERROR(errno);
-
+    printf("xxx2 %d\n", ret);
     avbuf->status = V4L2BUF_IN_DRIVER;
+
 
     return 0;
 }

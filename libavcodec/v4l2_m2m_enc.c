@@ -280,6 +280,7 @@ static int v4l2_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
     AVFrame *frame = s->frame;
     int ret;
 
+    
     if (s->draining)
         goto dequeue;
 
@@ -296,6 +297,7 @@ static int v4l2_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
     if (ret != AVERROR(EAGAIN))
         av_frame_unref(frame);
 
+printf("v4l2_receive_packet %d\n", ret);
     if (ret < 0 && ret != AVERROR(EAGAIN))
         return ret;
 
@@ -354,10 +356,7 @@ static av_cold int v4l2_encode_init(AVCodecContext *avctx)
         return ret;
     }
 
-    if (V4L2_TYPE_IS_MULTIPLANAR(output->type))
-        v4l2_fmt_output = output->format.fmt.pix_mp.pixelformat;
-    else
-        v4l2_fmt_output = output->format.fmt.pix.pixelformat;
+    v4l2_fmt_output = output->format.fmt.pix_mp.pixelformat;
 
     pix_fmt_output = ff_v4l2_format_v4l2_to_avfmt(v4l2_fmt_output, AV_CODEC_ID_RAWVIDEO);
     if (pix_fmt_output != avctx->pix_fmt) {

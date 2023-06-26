@@ -44,6 +44,18 @@ static int v4l2_try_start(AVCodecContext *avctx)
 
     /* 1. start the output process */
     if (!output->streamon) {
+        ret = ioctl(s->fd, VIDIOC_G_FMT, &output->format);
+        if (ret) {
+            av_log(avctx, AV_LOG_WARNING, "VIDIOC_G_FMT ioctl\n");
+            return ret;
+        }
+        printf("%d", output->format.fmt.pix.sizeimage);
+
+         ret = ff_v4l2_context_init(&s->output);
+    if (ret) {
+        av_log(avctx, AV_LOG_ERROR, "no v4l2 output context's buffers\n");
+        return ret;
+    }
         ret = ff_v4l2_context_set_status(output, VIDIOC_STREAMON);
         if (ret < 0) {
             av_log(avctx, AV_LOG_DEBUG, "VIDIOC_STREAMON on output context\n");
@@ -196,6 +208,7 @@ static av_cold int v4l2_decode_init(AVCodecContext *avctx)
      * by the v4l2 driver; this event will trigger a full pipeline reconfig and
      * the proper values will be retrieved from the kernel driver.
      */
+    printf("%d %d",avctx->coded_height,avctx->coded_width);
     output->height = capture->height = avctx->coded_height;
     output->width = capture->width = avctx->coded_width;
 

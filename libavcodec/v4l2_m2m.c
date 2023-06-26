@@ -170,11 +170,13 @@ static int v4l2_configure_contexts(V4L2m2mContext *s)
         goto error;
     }
 
+   
     ret = ff_v4l2_context_init(&s->output);
     if (ret) {
         av_log(log_ctx, AV_LOG_ERROR, "no v4l2 output context's buffers\n");
         goto error;
     }
+
 
     /* decoder's buffers need to be updated at a later stage */
     if (s->avctx && !av_codec_is_decoder(s->avctx->codec)) {

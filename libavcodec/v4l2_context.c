@@ -55,12 +55,12 @@ static inline AVCodecContext *logger(V4L2Context *ctx)
 
 static inline unsigned int v4l2_get_width(struct v4l2_format *fmt)
 {
-    return V4L2_TYPE_IS_MULTIPLANAR(fmt->type) ? fmt->fmt.pix_mp.width : fmt->fmt.pix.width;
+    return fmt->fmt.pix_mp.width;
 }
 
 static inline unsigned int v4l2_get_height(struct v4l2_format *fmt)
 {
-    return V4L2_TYPE_IS_MULTIPLANAR(fmt->type) ? fmt->fmt.pix_mp.height : fmt->fmt.pix.height;
+    return fmt->fmt.pix_mp.height;
 }
 
 static AVRational v4l2_get_sar(V4L2Context *ctx)
@@ -84,12 +84,9 @@ static AVRational v4l2_get_sar(V4L2Context *ctx)
 static inline unsigned int v4l2_resolution_changed(V4L2Context *ctx, struct v4l2_format *fmt2)
 {
     struct v4l2_format *fmt1 = &ctx->format;
-    int ret =  V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ?
+    int ret = 
         fmt1->fmt.pix_mp.width != fmt2->fmt.pix_mp.width ||
-        fmt1->fmt.pix_mp.height != fmt2->fmt.pix_mp.height
-        :
-        fmt1->fmt.pix.width != fmt2->fmt.pix.width ||
-        fmt1->fmt.pix.height != fmt2->fmt.pix.height;
+        fmt1->fmt.pix_mp.height != fmt2->fmt.pix_mp.height;
 
     if (ret)
         av_log(logger(ctx), AV_LOG_DEBUG, "%s changed (%dx%d) -> (%dx%d)\n",
@@ -129,28 +126,13 @@ static inline void v4l2_save_to_context(V4L2Context* ctx, struct v4l2_format_upd
     if (fmt->update_avfmt)
         ctx->av_pix_fmt = fmt->av_fmt;
 
-    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
         /* update the sizes to handle the reconfiguration of the capture stream at runtime */
         ctx->format.fmt.pix_mp.height = ctx->height;
         ctx->format.fmt.pix_mp.width = ctx->width;
         if (fmt->update_v4l2) {
             ctx->format.fmt.pix_mp.pixelformat = fmt->v4l2_fmt;
 
-            /* s5p-mfc requires the user to specify a buffer size */
-            ctx->format.fmt.pix_mp.plane_fmt[0].sizeimage =
-                v4l2_get_framesize_compressed(ctx, ctx->width, ctx->height);
         }
-    } else {
-        ctx->format.fmt.pix.height = ctx->height;
-        ctx->format.fmt.pix.width = ctx->width;
-        if (fmt->update_v4l2) {
-            ctx->format.fmt.pix.pixelformat = fmt->v4l2_fmt;
-
-            /* s5p-mfc requires the user to specify a buffer size */
-            ctx->format.fmt.pix.sizeimage =
-                v4l2_get_framesize_compressed(ctx, ctx->width, ctx->height);
-        }
-    }
 }
 
 static int v4l2_start_decode(V4L2Context *ctx)
@@ -374,11 +356,9 @@ dequeue:
         memset(&buf, 0, sizeof(buf));
         buf.memory = V4L2_MEMORY_USERPTR;
         buf.type = ctx->type;
-        if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
-            memset(planes, 0, sizeof(planes));
-            buf.length = VIDEO_MAX_PLANES;
-            buf.m.planes = planes;
-        }
+        memset(planes, 0, sizeof(planes));
+        buf.length =ctx->format.fmt.pix_mp.num_planes;
+        buf.m.planes = planes;
 
         ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_DQBUF, &buf);
         if (ret) {
@@ -392,8 +372,7 @@ dequeue:
         }
 
         if (ctx_to_m2mctx(ctx)->draining && !V4L2_TYPE_IS_OUTPUT(ctx->type)) {
-            int bytesused = V4L2_TYPE_IS_MULTIPLANAR(buf.type) ?
-                            buf.m.planes[0].bytesused : buf.bytesused;
+            int bytesused = buf.m.planes[0].bytesused;
             if (bytesused == 0) {
                 ctx->done = 1;
                 return NULL;
@@ -407,10 +386,8 @@ dequeue:
         avbuf = &ctx->buffers[buf.index];
         avbuf->status = V4L2BUF_AVAILABLE;
         avbuf->buf = buf;
-        if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type)) {
-            memcpy(avbuf->planes, planes, sizeof(planes));
-            avbuf->buf.m.planes = avbuf->planes;
-        }
+        memcpy(avbuf->planes, planes, sizeof(planes));
+        avbuf->buf.m.planes = avbuf->planes;
         return avbuf;
     }
 
@@ -445,6 +422,9 @@ static int v4l2_release_buffers(V4L2Context* ctx)
     };
     int i, j;
 
+    if(!ctx->buffers)
+        return 0;
+
     for (i = 0; i < ctx->num_buffers; i++) {
         V4L2Buffer *buffer = &ctx->buffers[i];
 
@@ -472,11 +452,7 @@ static inline int v4l2_try_raw_format(V4L2Context* ctx, enum AVPixelFormat pixfm
     if (!v4l2_fmt)
         return AVERROR(EINVAL);
 
-    if (V4L2_TYPE_IS_MULTIPLANAR(ctx->type))
-        fmt->fmt.pix_mp.pixelformat = v4l2_fmt;
-    else
-        fmt->fmt.pix.pixelformat = v4l2_fmt;
-
+    fmt->fmt.pix_mp.pixelformat = v4l2_fmt;
     fmt->type = ctx->type;
 
     ret = ioctl(ctx_to_m2mctx(ctx)->fd, VIDIOC_TRY_FMT, fmt);
@@ -585,7 +561,7 @@ int ff_v4l2_context_enqueue_frame(V4L2Context* ctx, const AVFrame* frame)
         s->draining= 1;
         return 0;
     }
-
+   
     avbuf = v4l2_getfree_v4l2buf(ctx);
     if (!avbuf)
         return AVERROR(EAGAIN);
@@ -614,7 +590,7 @@ int ff_v4l2_context_enqueue_packet(V4L2Context* ctx, const AVPacket* pkt)
     avbuf = v4l2_getfree_v4l2buf(ctx);
     if (!avbuf)
         return AVERROR(EAGAIN);
-
+    printf("ff_v4l2_context_enqueue_packet\n");
     ret = ff_v4l2_buffer_avpkt_to_buf(pkt, avbuf);
     if (ret)
         return ret;
@@ -759,7 +735,7 @@ int ff_v4l2_context_init(V4L2Context* ctx)
         }
     }
 
-    av_log(logger(ctx), AV_LOG_DEBUG, "%s: %s %02d buffers initialized: %04ux%04u, sizeimage %08u, bytesperline %08u\n", ctx->name,
+    av_log(logger(ctx), AV_LOG_ERROR, "%s: %s %02d buffers initialized: %04ux%04u, sizeimage %08u, bytesperline %08u\n", ctx->name,
         V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ? av_fourcc2str(ctx->format.fmt.pix_mp.pixelformat) : av_fourcc2str(ctx->format.fmt.pix.pixelformat),
         req.count,
         v4l2_get_width(&ctx->format),
